@@ -16,10 +16,10 @@ class MobileRobotEnv(gym.Env):
         self.target_pos = np.random.uniform(low=0, high=15, size=(2))
         self.max_distance = 15
         self.num_obs = num_obs
-        self.detection_range = 3
+        self.detection_range = 5
 
         self.action_space = gym.spaces.Box(
-            low=0, high=2, shape=(2 * (self.num_obs + 2),), dtype=np.float32
+            low=0, high=2, shape=(2 * (self.num_obs + 1),), dtype=np.float32
         )
         self.observation_space = gym.spaces.Box(
             low=0, high=self.max_distance, shape=(2 * (self.num_obs + 1),), dtype=np.float32
@@ -66,10 +66,6 @@ class MobileRobotEnv(gym.Env):
         return observation ,self.count_in_area
 
     def step(self, action):
-        # 0~10 detection_range
-        self.detection_range = action[-1]*5
-        
-        action = action[:-1]
         self.target_damping_coef, self.target_spring_coef = (
             action[-2],
             action[-1],
@@ -137,8 +133,8 @@ class MobileRobotEnv(gym.Env):
             plt.ion()
 
         self.ax.clear()
-        self.ax.set_xlim(-5, self.max_distance+5)
-        self.ax.set_ylim(-5, self.max_distance+5)
+        self.ax.set_xlim(-3, self.max_distance+3)
+        self.ax.set_ylim(-3, self.max_distance+3)
         
         # Draw target
         self.ax.scatter(self.target_pos[0], self.target_pos[1], c='red', marker='x', s=100, label='Target')
@@ -170,7 +166,7 @@ class MobileRobotEnv(gym.Env):
         for idx, (pos, vel) in enumerate(zip(self.obstacle_pos, self.obstacle_vel)):
             obs_dist = pos - self.robot_pos
             if np.linalg.norm(obs_dist) < self.detection_range:
-                self.ax.text(pos[0] + 0.5, pos[1], f"damping_coef: {self.obstacle_spring_coef[idx]:.2f}\nspring_coef: {self.obstacle_damping_coef[idx]:.2f}", fontsize=8, color='black')
+                self.ax.text(pos[0] + 0.5, pos[1], f"Spring_coef: {self.obstacle_spring_coef[idx]:.2f}\nDamping_coef: {self.obstacle_damping_coef[idx]:.2f}", fontsize=8, color='black')
                 lines.append([self.robot_pos, pos])
                 colors.append(self.obs_force)
 

@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 
 
 
-num_obs=50
+num_obs=10
 env = MobileRobotEnv(num_obs)
 
 num_tests = 10
@@ -24,6 +24,7 @@ for _ in range(num_tests):
 
     while True:
         action = env.action_space.sample()
+        # # Constant Agent
         # action=[0.3,0.8]*num_obs+[0.5,2]
         obs, reward, done, _,count_in_area = env.step(action)
         # print(count_in_area)
