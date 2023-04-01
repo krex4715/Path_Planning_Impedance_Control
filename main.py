@@ -1,5 +1,5 @@
 import gym
-from env_v2 import MobileRobotEnv
+from env_v4 import MobileRobotEnv
 import numpy as np
 import random
 import matplotlib.pyplot as plt
@@ -7,10 +7,10 @@ import matplotlib.pyplot as plt
 
 
 
-num_obs=10
+num_obs=30
 env = MobileRobotEnv(num_obs)
 
-num_tests = 10
+num_tests = 20
 test_rewards = []
 
 plt.ion()  # Turn on interactive mode for matplotlib
@@ -25,9 +25,9 @@ for _ in range(num_tests):
     while True:
         action = env.action_space.sample()
         # # Constant Agent
-        # action=[0.3,0.8]*num_obs+[0.5,2]
+        action=[1,1]*num_obs+[1,3]
         obs, reward, done, _,count_in_area = env.step(action)
-        # print(count_in_area)
+        print(print(obs))
         total_reward += reward
         env.render()
         if done:
