@@ -5,19 +5,21 @@ from matplotlib.patches import Circle, Rectangle
 from matplotlib.collections import LineCollection
 
 class MobileRobotEnv(gym.Env):
-    def __init__(self, num_obs=6,maxtime=1000):
+    def __init__(self, num_obs=6,maxtime=1000,graphics=True):
         super().__init__()
 
         self.robot_size = 0.3
         self.robot_mass = 0.3
-        self.max_speed = 5
+        self.max_speed = 3
         self.max_acc = 2
-        self.time_step = 0.05
-        self.target_pos = np.float32([17,10])
+        self.time_step = 0.1
+        self.rot_seed = 2*np.pi*np.random.uniform()
+        self.target_pos = np.float32([10 + 7*np.cos(self.rot_seed), 10 + 7*np.sin(self.rot_seed)])
         self.max_distance = 20
         self.num_obs = num_obs
         self.detection_range = 5
         self.maxtime=maxtime
+        self.graphics = graphics
 
         self.action_space = gym.spaces.Box(
             low=0, high=10, shape=(2 * (self.num_obs + 1),), dtype=np.float32
@@ -38,7 +40,8 @@ class MobileRobotEnv(gym.Env):
         self.reset()
 
     def reset(self):
-        self.robot_pos = np.random.uniform(low=self.robot_size, high=self.max_distance - self.robot_size, size=2)
+        self.robot_pos = np.float32([10 + 7*np.cos(self.rot_seed), 10 + 7*np.sin(self.rot_seed)])
+        
         self.obstacle_pos = np.random.uniform(low=self.robot_size,
                                               high=self.max_distance - self.robot_size,
                                               size=(self.num_obs, 2),
@@ -46,7 +49,7 @@ class MobileRobotEnv(gym.Env):
         self.obstacle_vel = np.random.normal(loc=0.0, scale=1.0, size=(10, 2))
         self.robot_vel = np.zeros(2)
         self.t = 0
-        self.target_area = 4*self.robot_size
+        self.target_area = 7*self.robot_size
         return self._get_observation()
 
     def _get_observation(self):
@@ -83,12 +86,17 @@ class MobileRobotEnv(gym.Env):
             self.obstacle_damping_coef[idx] = action[2 * i]
             self.obstacle_spring_coef[idx] = action[2 * i + 1]
 
+        target_dist = np.linalg.norm(self.target_pos - self.robot_pos)
+        # print("distance : ",np.linalg.norm(self.target_pos - self.robot_pos))
+
         target_force = (
             self.target_spring_coef * (self.target_pos - self.robot_pos)
             + self.target_damping_coef * (0 - self.robot_vel)
         )
-        self.obstacle_vel = 2*np.random.uniform(low=-2, high=2, size=(self.num_obs, 2))
-        self.target_vel = 2*np.random.uniform(low=-2, high=2, size=(2))
+        if target_dist > 1.5*self.detection_range:
+            target_force = target_force/2
+        self.obstacle_vel = np.random.uniform(low=-2, high=2, size=(self.num_obs, 2))
+        self.target_vel = np.random.uniform(low=-2, high=2, size=(2))
 
         obstacle_force = np.zeros(2)
         self.desired_positions = np.zeros((self.num_obs, 2))
@@ -105,11 +113,15 @@ class MobileRobotEnv(gym.Env):
                     spring_coef * (desired_pos - self.robot_pos) + damping_coef * (desired_vel - self.robot_vel)
                 )
                 obstacle_force += self.obs_force
+                if dist_norm < self.detection_range/5:
+                    obstacle_force = 5*obstacle_force
+                elif dist_norm < self.detection_range/2:
+                    obstacle_force = 2*obstacle_force
                 self.desired_positions[i] = desired_pos
-
+        
         total_force = target_force + obstacle_force
-        # total_force = obstacle_force
         acc = np.clip(total_force / self.robot_mass, -self.max_acc, self.max_acc)
+        # print(acc)
         self.robot_vel += acc * self.time_step
         self.robot_vel = np.clip(self.robot_vel, -self.max_speed, self.max_speed)
         self.robot_pos += self.robot_vel * self.time_step
@@ -119,24 +131,29 @@ class MobileRobotEnv(gym.Env):
         self.obstacle_pos = np.clip(self.obstacle_pos, 0, self.max_distance - self.robot_size)
 
         # self.target_pos += self.target_vel * self.time_step
-        self.target_pos = np.float32([10 + 7*np.cos(2*np.pi*self.t/300), 10 + 7*np.sin(2*np.pi*self.t/300)])
+        # self.target_pos = np.float32([10 + 7*np.cos(2*np.pi*self.t/300), 10 + 7*np.sin(2*np.pi*self.t/300)])
+        self.target_pos = np.float32([10 + 7*np.cos((2*np.pi*self.t/200 + self.rot_seed)), 10 + 7*np.sin((2*np.pi*self.t/200 + self.rot_seed))])
 
         done = False
         reward = 0
         success=False
 
+        osbstacle_distances = np.linalg.norm(self.robot_pos - self.obstacle_pos,axis=1)
+        # print('any:',any(osbstacle_distances<1))
+
 
         if np.linalg.norm(self.target_pos - self.robot_pos) < self.target_area:
-            done = True
+            
             success=True
-            reward = 40
+            reward = 1000
         
         elif np.linalg.norm(self.target_pos - self.robot_pos) < self.detection_range:
-            reward = 10-np.linalg.norm(self.target_pos - self.robot_pos)
+            reward = 5-np.linalg.norm(self.target_pos - self.robot_pos)
         
-        elif any(np.linalg.norm(self.robot_pos - pos) < self.robot_size for pos in self.obstacle_pos):
+        
+        elif any(osbstacle_distances<1):
             done = True
-            reward = -100
+            reward = -1000
             success=False
         
         elif self.t > self.maxtime:
@@ -145,7 +162,7 @@ class MobileRobotEnv(gym.Env):
             success=False
         
         else:
-            reward = -np.linalg.norm(self.target_pos - self.robot_pos)
+            reward = -10-np.linalg.norm(self.target_pos - self.robot_pos)
 
         self.t += 1
         return self._get_observation(), reward, done, {}, self.count_in_area , success
@@ -165,16 +182,19 @@ class MobileRobotEnv(gym.Env):
         self.ax.add_patch(robot)
 
         # Draw the target
-        self.ax.scatter(self.target_pos[0], self.target_pos[1], c='red', marker='x', s=100, label='Target')
+        self.ax.scatter(self.target_pos[0], self.target_pos[1], c='#8c564b', marker='x', s=200, label='Target')
 
 
         # Draw the obstacles
         for pos, vel, desired_pos in zip(self.obstacle_pos, self.obstacle_vel, self.desired_positions):
             self.ax.scatter(pos[0], pos[1], c='black', marker='s', s=100, label='Obstacle')
 
-            if np.linalg.norm(self.robot_pos - pos) < self.detection_range:
-                self.ax.plot([pos[0], desired_pos[0]], [pos[1], desired_pos[1]], color='y', linestyle='--')
-                self.ax.scatter(desired_pos[0], desired_pos[1], c='r', marker='o', s=30, label='Push_des')
+
+            if self.graphics ==True:
+                if np.linalg.norm(self.robot_pos - pos) < self.detection_range:
+                    if desired_pos[0]!= 0:
+                        self.ax.plot([pos[0], desired_pos[0]], [pos[1], desired_pos[1]], color='y', linestyle='--')
+                        self.ax.scatter(desired_pos[0], desired_pos[1], c='r', marker='o', s=30, label='Push_des')
 
         # # Draw the fixed, large rectangular obstacle
         # rect_obstacle = Rectangle((5, 5), 2, 5, color='m', label="Fixed Obstacle")
@@ -186,8 +206,8 @@ class MobileRobotEnv(gym.Env):
         self.ax.legend(by_label.values(), by_label.keys(), loc='upper right')
 
         # Draw detection range circle
-        detection_circle = Circle(self.robot_pos, self.detection_range, fill=False, linestyle='dashed', color='gray')
-        target_area_circle = Circle(self.target_pos, self.target_area, fill=False, linestyle='dashed', color='gray')
+        detection_circle = Circle(self.robot_pos, self.detection_range, fill=True, linestyle='dashed', facecolor=(0.2, 0.1, 0.1, 0.05), zorder=-1)
+        target_area_circle = Circle(self.target_pos, self.target_area, fill=True, linestyle='dashed', facecolor=(0.1, 0.2, 0.1, 0.1), zorder=-1)
 
         self.ax.add_patch(detection_circle)
         self.ax.add_patch(target_area_circle)
@@ -202,29 +222,31 @@ class MobileRobotEnv(gym.Env):
                         color="blue",
                         )
 
-        # Draw lines between robot, obstacles, and target with colors representing force strength
-        lines = []
-        colors = []
-        for idx, (pos, vel) in enumerate(zip(self.obstacle_pos, self.obstacle_vel)):
-            obs_dist = pos - self.robot_pos
-            if np.linalg.norm(obs_dist) < self.detection_range:
-                # Get the order of the current obstacle in closest_indices
-                if idx in self.closest_indices:
-                    obstacle_order = np.where(self.closest_indices == idx)[0][0] + 1
 
-                self.ax.text(pos[0] + 0.5, pos[1], f"{obstacle_order}\nS: {self.obstacle_spring_coef[idx]:.2f}\nD: {self.obstacle_damping_coef[idx]:.2f}", fontsize=12, color='black')
-                            
-                lines.append([self.robot_pos, pos])
-                colors.append(self.obs_force)
-            else:
-                self.ax.text(pos[0] + 0.5, pos[1], f"Out", fontsize=12, color='black')
+        if self.graphics ==True:
+            # Draw lines between robot, obstacles, and target with colors representing force strength
+            lines = []
+            colors = []
+            for idx, (pos, vel) in enumerate(zip(self.obstacle_pos, self.obstacle_vel)):
+                obs_dist = pos - self.robot_pos
+                if np.linalg.norm(obs_dist) < self.detection_range:
+                    # Get the order of the current obstacle in closest_indices
+                    if idx in self.closest_indices:
+                        obstacle_order = np.where(self.closest_indices == idx)[0][0] + 1
+
+                    self.ax.text(pos[0] + 0.5, pos[1], f"{obstacle_order}\nS: {self.obstacle_spring_coef[idx]:.2f}\nD: {self.obstacle_damping_coef[idx]:.2f}", fontsize=12, color='black')
+                                
+                    lines.append([self.robot_pos, pos])
+                    colors.append(self.obs_force)
+                else:
+                    self.ax.text(pos[0] + 0.5, pos[1], f"Out", fontsize=12, color='black')
 
 
-        lines.append([self.robot_pos, self.target_pos])
-        
-        line_collection = LineCollection(lines, cmap='twilight_shifted_r', linewidths=1)
-        self.ax.add_collection(line_collection)
-        self.ax.text(self.target_pos[0] + 0.5, self.target_pos[1], f"D: {self.target_damping_coef:.2f}\nS: {self.target_spring_coef:.2f}", fontsize=12, color='red')
+            lines.append([self.robot_pos, self.target_pos])
+            
+            line_collection = LineCollection(lines, cmap='twilight_shifted_r', linewidths=1)
+            self.ax.add_collection(line_collection)
+            self.ax.text(self.target_pos[0] + 0.5, self.target_pos[1], f"D: {self.target_damping_coef:.2f}\nS: {self.target_spring_coef:.2f}", fontsize=12, color='red')
 
 
 
