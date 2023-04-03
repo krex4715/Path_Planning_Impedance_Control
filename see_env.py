@@ -27,7 +27,7 @@ for _ep in range(MAX_EPISODES):
     while True:
         action = env.action_space.sample()
         # # Constant Agent
-        # action=[1,5]*num_obs+[2,5]
+        action=[1,5]*num_obs+[2,10]
         obs, reward, done, _,count_in_area,success = env.step(action)
         # print(obs)
         # print(reward)

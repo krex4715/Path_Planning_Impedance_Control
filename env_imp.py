@@ -17,7 +17,7 @@ class MobileRobotEnv(gym.Env):
         self.target_pos = np.float32([10 + 7*np.cos(self.rot_seed), 10 + 7*np.sin(self.rot_seed)])
         self.max_distance = 20
         self.num_obs = num_obs
-        self.detection_range = 5
+        self.detection_range = 3
         self.maxtime=maxtime
         self.graphics = graphics
 
