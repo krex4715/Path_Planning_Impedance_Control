@@ -8,7 +8,7 @@
 |                                  |                                                |
 | :------------------------------: | :--------------------------------------------: |
 |         `XY velocity Env`          |                 `Constant Impedance Control Env`                 |
-| ![r](/image/xy_env_notr.gif) |         <img src="/image/imp_env.gif" width="300" height="300">       |
+| ![r](/image/xy_env_notr.gif) |         <img src="/image/imp_env.gif" width="200" height="200">       |
 
 
 
