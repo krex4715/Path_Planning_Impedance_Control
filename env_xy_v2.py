@@ -29,15 +29,18 @@ class MobileRobotEnv(gym.Env):
         self.target_spring_coef = 0
         self.maxtime=maxtime
         self.noise_ratio=0.5
-
+        
+        
+        # robot has sensors to detect distance to obstacles
+        self.detecting_sensor_number = 16
+        self.sensor_angle = 2*np.pi*np.arange(self.detecting_sensor_number)/self.detecting_sensor_number
 
         self.action_space = gym.spaces.Box(
             low=-self.max_speed, high=self.max_speed, shape=(2,), dtype=np.float32
         )
-        self.observation_space = gym.spaces.Box(
-            low=-self.max_distance, high=self.max_distance, shape=(2 * (self.num_obs + 1),), dtype=np.float32
+        self.observation_space = gym.spaces.Box(    # observation space is sensornum(distance_sensor) + 2(robot_position) + 2(target_position)
+            low=-self.max_distance, high=self.max_distance, shape=(self.detecting_sensor_number+2+2+4,), dtype=np.float32  # observation space is 12
         )
-
         self.reset()
 
 
@@ -48,29 +51,82 @@ class MobileRobotEnv(gym.Env):
                                               high=self.max_distance - 2,
                                               size=(self.num_obs, 2),
                                               )
-        self.obstacle_vel = np.random.normal(loc=0.0, scale=1.0, size=(self.num_obs, 2))
+        self.obstacle_vel = np.random.normal(loc=0.0, scale=0.6, size=(self.num_obs, 2))
         self.robot_vel = np.zeros(2)
         self.t = 0
+        self.count_in_area = 0
         self.target_area = 4*self.robot_size
+        self.sensor_signals = np.zeros(self.detecting_sensor_number)
+
         return self._get_observation()
     
     def _get_observation(self):
+        # observation is sensor signal + robot position + target position+ distace to 4 wall
+        # robot position is robot position
+        # target position is target position
+        # sensor signal is distance to obstacles
+        # sensor is line sensor that can detect distance to obstacles
+        # sensor line's angle is 360/sensor_number
+        # sensor line's length is detecting_range
+        # sensor line's origin is robot position
+        # sensor line's direction is robot orientation
+             
+        observation = np.zeros(self.detecting_sensor_number+2+2+4)
+        observation[-2:] = self.robot_pos
+        observation[-4:-2] = self.target_pos
+        # distance to 4 wall
+        observation[-8:-4] = np.array([self.robot_pos[0],self.robot_pos[1],self.max_distance-self.robot_pos[0],self.max_distance-self.robot_pos[1]]) 
+        
+        sensor_signals = self.detecting_sensor(self.robot_pos,self.obstacle_pos)
+        # print("====sensor_signals====",sensor_signals)
+        
+        observation[:self.detecting_sensor_number] = sensor_signals
+        
+        
+        
+        # for reward
         self.target_dist = self.target_pos - self.robot_pos
         obs_pos = self.obstacle_pos - self.robot_pos
         dists = np.linalg.norm(obs_pos, axis=1)
         self.count_in_area = np.count_nonzero(dists < self.detection_range)
+        
+        
+        
+        return observation,self.count_in_area
+        
 
-        sorted_indices = np.argsort(dists)
-        self.closest_indices = sorted_indices[:self.count_in_area]
+    def detecting_sensor(self,robot_pos,obstacle_pos):
+        sensor_signals = np.zeros(self.detecting_sensor_number)
+        for i in range(self.detecting_sensor_number):
+            sensor_angle = 2*np.pi*i/self.detecting_sensor_number
+            sensor_direction = np.array([np.cos(sensor_angle),np.sin(sensor_angle)])
+            sensor_origin = robot_pos
+            sensor_end = sensor_origin + self.detection_range*sensor_direction
+            sensor_line = np.array([sensor_origin,sensor_end])
+            sensor_signals[i] = self.detecting_sensor_line(sensor_line,obstacle_pos)
+        return sensor_signals
+    
+    def detecting_sensor_line(self, sensor_line, obstacle_pos):
+        sensor_origin = sensor_line[0]
+        sensor_end = sensor_line[1]
+        sensor_direction = sensor_end - sensor_origin
+        sensor_length = np.linalg.norm(sensor_direction)
+        sensor_direction = sensor_direction / sensor_length
 
-        observation = np.zeros((2 * (self.num_obs + 1),))
-        observation[-2:] = self.target_dist
-        for i in range(self.count_in_area):
-            observation[2 * i: 2 * (i + 1)] = obs_pos[self.closest_indices[i]]
-        for i in range(self.count_in_area, self.num_obs):
-            observation[2 * i: 2 * (i + 1)] = [0, 0]
-            return observation, self.count_in_area
+        min_distance = sensor_length
+        for obs_pos in obstacle_pos:
+            obs_to_origin = obs_pos - sensor_origin
+            projection_length = np.dot(obs_to_origin, sensor_direction)
+            if 0 <= projection_length <= sensor_length:
+                projected_point = sensor_origin + projection_length * sensor_direction
+                distance_to_obstacle = np.linalg.norm(obs_pos - projected_point)
+                if distance_to_obstacle < min_distance:
+                    min_distance = distance_to_obstacle
 
+        return min_distance
+
+    
+            
     def step(self, action):
         self.t += 1
         self.robot_vel = np.clip(action, -self.max_speed, self.max_speed)
@@ -84,6 +140,7 @@ class MobileRobotEnv(gym.Env):
         self.robot_pos = np.clip(self.robot_pos, 0, self.max_distance)
 
         # obstacle position update with velocity,cannot go outside the wall
+        # wall set 0~self.max_distance
         self.obstacle_pos += self.obstacle_vel * self.time_step
         self.obstacle_pos = np.clip(self.obstacle_pos, 0, self.max_distance)
 
@@ -105,12 +162,13 @@ class MobileRobotEnv(gym.Env):
     def _get_reward(self, count_in_area):
         reward = 0
         # if robot is far from the target, it gets negative reward depending on the distance
+        self.target_dist = self.target_pos - self.robot_pos
         reward -= np.linalg.norm(self.target_dist) / 10
 
         # if robot position is in target area it gets positive reward
         # reward get bigger as the robot gets closer to the target position
         if np.linalg.norm(self.target_dist) < self.target_area:
-            reward += 10 - np.linalg.norm(self.target_dist)
+            reward += 3*(10- np.linalg.norm(self.target_dist))
             
 
         # if robot coliide to obstacle, it get big negative reward
@@ -118,9 +176,12 @@ class MobileRobotEnv(gym.Env):
             if np.linalg.norm(self.robot_pos - self.obstacle_pos[i]) < self.robot_size:
                 reward -= 100
         # if robot collide to wall, it gets negative reward
-        if np.linalg.norm(self.robot_pos) > self.max_distance - self.robot_size:
+        if self.robot_pos[0] > self.max_distance - self.robot_size or self.robot_pos[0] < self.robot_size:
             reward -= 100
-    
+        if self.robot_pos[1] > self.max_distance - self.robot_size or self.robot_pos[1] < self.robot_size:
+            reward -= 100
+        
+          
         return reward
     
     def _get_done(self, reward):
@@ -140,11 +201,13 @@ class MobileRobotEnv(gym.Env):
         for i in range(self.num_obs):
             if np.linalg.norm(self.robot_pos - self.obstacle_pos[i]) < self.robot_size:
                 done = True
+        
         # if robot collide to wall
-        if np.linalg.norm(self.robot_pos) > self.max_distance -0.5:
+        if self.robot_pos[0] > self.max_distance - self.robot_size or self.robot_pos[0] < self.robot_size:
             done = True
-        elif np.linalg.norm(self.robot_pos) < 0.5:
+        if self.robot_pos[1] > self.max_distance - self.robot_size or self.robot_pos[1] < self.robot_size:
             done = True
+            
 
         return done
     
@@ -226,17 +289,16 @@ class MobileRobotEnv(gym.Env):
         by_label = dict(zip(labels, handles))
         ax.legend(by_label.values(), by_label.keys(), loc='upper right')
 
-        # show the order of obstacles
-        for i in range(self.count_in_area):
-            ax.text(self.obstacle_pos[self.closest_indices[i]][0], self.obstacle_pos[self.closest_indices[i]][1], str(i), fontsize=10)
 
+        # draw sensor lines that detect obstacles. line draw regardless of obstacle's existence
+        for i in range(self.detecting_sensor_number):
+            sensor_angle = self.sensor_angle[i]
+            sensor_pos = self.robot_pos + self.detection_range * np.array([np.cos(sensor_angle), np.sin(sensor_angle)])
+            ax.plot([self.robot_pos[0], sensor_pos[0]], [self.robot_pos[1], sensor_pos[1]], 'g--', linewidth=0.5)
+        
         
         # draw the line between robot and target
         ax.plot([self.robot_pos[0], self.target_pos[0]], [self.robot_pos[1], self.target_pos[1]], 'r--', linewidth=0.5)
-
-        # draw the thin line between robot and target
-        for i in range(self.count_in_area):
-            ax.plot([self.robot_pos[0], self.obstacle_pos[self.closest_indices[i]][0]], [self.robot_pos[1], self.obstacle_pos[self.closest_indices[i]][1]], 'k--', linewidth=0.5)
 
         plt.pause(0.01)
 

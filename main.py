@@ -1,5 +1,5 @@
 import gym
-from env_xy import MobileRobotEnv
+from env_xy_v2 import MobileRobotEnv
 import numpy as np
 import random
 import buffer
@@ -10,7 +10,7 @@ import gc
 
 
 
-num_obs=10
+num_obs=30
 
 MAX_EPISODES = 3000
 MAX_STEPS = 1000
@@ -40,6 +40,12 @@ trainer = train.Trainer(S_DIM, A_DIM, A_MAX, ram)
 
 
 
+# model history load. if you want to load env_xy_v2.py model, use this code
+threshold = 1500
+trainer.load_models(load_dir='model_history_xy_v2/',episode=threshold)
+
+
+
 avg_reward = 0
 success_count=0
 
@@ -47,14 +53,14 @@ loss_actors = []
 loss_critics = []
 
 training=True
-SAVE = False
+SAVE = True
 
 plt.ion()  # Turn on interactive mode for matplotlib
 
 
 
 for _ep in range(MAX_EPISODES):
-    # _ep = _ep+threshold
+    _ep = _ep+threshold
     obs = env.reset()
     state = np.float32(obs[0])
     print('EPISODE :- ', _ep)
@@ -71,8 +77,10 @@ for _ep in range(MAX_EPISODES):
         # if you use env_imp.py environement, and you want to use constant agent, use this code
         # action=[1,5]*num_obs+[2,10]
         
+    
         new_obs, reward, done, info = env.step(action)
         # print(reward)
+        # print(new_obs)
         new_state = np.float32(new_obs)
 
         
@@ -93,15 +101,12 @@ for _ep in range(MAX_EPISODES):
             loss_actors.append(loss_actor)
             loss_critics.append(loss_critic)
 
-        
-    gc.collect()
-
 
     if _ep%100 == 0:
         if SAVE == True:
-           trainer.save_models(save_dir='model_history_xy/' , episode_count=_ep)
+           trainer.save_models(save_dir='model_history_xy_v2/' , episode_count=_ep)
         print(f'success " {success_count} / 100')
         success_count=0
-
+    gc.collect()
 plt.ioff() # Turn off interactive mode for matplotlib
 env.close()
