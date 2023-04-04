@@ -8,7 +8,7 @@
 |                                  |                                                |
 | :------------------------------: | :--------------------------------------------: |
 |         `XY velocity Env`          |                 `Constant Impedance Control Env`                 |
-| ![random](/image/xy_env_notr.gif) |         ![constant](/image/imp_env.gif)         |
+| ![r](/image/xy_env_notr.gif) |         ![r](/image/imp_env.gif)         |
 
 
 
@@ -16,7 +16,7 @@
 |                                  |
 | :------------------------------: |
 |         `After XY Env Trainig (SAC Model)`           | 
-| ![random](/image/xy_env_trained.gif) |
+| ![r](/image/xy_env_trained.gif) |
 
 
 
