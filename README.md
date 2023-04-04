@@ -7,11 +7,19 @@
 
 |                                  |                                                |
 | :------------------------------: | :--------------------------------------------: |
-|         `XY velocity Env`          |   `Constant Impedance Control Env` |
-| ![random](/image/xy_env_notr.gif) |       ![constant](/image/imp_env.gif)       |
+|         `XY velocity Env`          |                 `Constant Impedance Control Env`                 |
+| ![random](/image/xy_env_notr.gif) |         ![constant](/image/imp_env.gif)         |
 
-|         `After XY Env Trainig (SAC Model)`         | 
-| ![random](/image/xy_env_trained.gif) |  
+
+
+
+|                                  |
+| :------------------------------: |
+|         `After XY Env Trainig (SAC Model)`           | 
+| ![random](/image/xy_env_trained.gif) |
+
+
+
 
 
 
