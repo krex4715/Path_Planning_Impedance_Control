@@ -1,5 +1,5 @@
 import gym
-from custom_env import MobileRobotEnv
+from env_xy import MobileRobotEnv
 import numpy as np
 import random
 import buffer
@@ -28,8 +28,16 @@ print(' Action Dimensions :- ', A_DIM)
 print(' Action Max :- ', A_MAX)
 ram = buffer.MemoryBuffer(MAX_BUFFER)
 trainer = train.Trainer(S_DIM, A_DIM, A_MAX, ram)
-threshold = 2000
-trainer.load_models(load_dir='model_history_xy/',episode=threshold)
+
+# model history load. if you want to load env_xy.py model, use this code
+# threshold = 2000
+# trainer.load_models(load_dir='model_history_xy/',episode=threshold)
+
+
+# model history load. if you want to load env_imp.py model, use this code
+# threshold = 200
+# trainer.load_models(load_dir='model_history_imp/',episode=threshold)
+
 
 
 avg_reward = 0
@@ -38,15 +46,15 @@ success_count=0
 loss_actors = []
 loss_critics = []
 
-training=False
-
+training=True
+SAVE = False
 
 plt.ion()  # Turn on interactive mode for matplotlib
 
 
 
 for _ep in range(MAX_EPISODES):
-    _ep = _ep+threshold
+    # _ep = _ep+threshold
     obs = env.reset()
     state = np.float32(obs[0])
     print('EPISODE :- ', _ep)
@@ -60,6 +68,8 @@ for _ep in range(MAX_EPISODES):
         else:
             action = trainer.get_exploration_action(state)
 
+        # if you use env_imp.py environement, and you want to use constant agent, use this code
+        # action=[1,5]*num_obs+[2,10]
         
         new_obs, reward, done, info = env.step(action)
         # print(reward)
@@ -88,7 +98,8 @@ for _ep in range(MAX_EPISODES):
 
 
     if _ep%100 == 0:
-        trainer.save_models(save_dir='model_history_xy/' , episode_count=_ep)
+        if SAVE == True:
+           trainer.save_models(save_dir='model_history_xy/' , episode_count=_ep)
         print(f'success " {success_count} / 100')
         success_count=0
 

@@ -1,14 +1,15 @@
-# env_v4.py
 import gym
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle, Rectangle
 from matplotlib.collections import LineCollection
 
-class MobileRobotEnv(gym.Env):
-    def __init__(self, num_obs=6,maxtime=1000):
-        super().__init__()
 
+
+
+class MobileRobotEnv(gym.Env):
+    def __init__(self, num_obs=6, maxtime=1000):
+        super().__init__()
         self.robot_size = 0.5
         self.robot_mass = 0.3
         self.max_speed = 6
@@ -27,6 +28,7 @@ class MobileRobotEnv(gym.Env):
         self.target_damping_coef = 0
         self.target_spring_coef = 0
         self.maxtime=maxtime
+        self.noise_ratio=0.5
 
 
         self.action_space = gym.spaces.Box(
@@ -38,19 +40,20 @@ class MobileRobotEnv(gym.Env):
 
         self.reset()
 
+
     def reset(self):
         self.rot_seed = 2*np.pi*np.random.uniform()
         self.robot_pos = np.random.uniform(low=self.robot_size, high=self.max_distance - self.robot_size, size=2)
-        self.obstacle_pos = np.random.uniform(low=self.robot_size,
-                                              high=self.max_distance - self.robot_size,
+        self.obstacle_pos = np.random.uniform(low=2,
+                                              high=self.max_distance - 2,
                                               size=(self.num_obs, 2),
                                               )
-        self.obstacle_vel = np.random.normal(loc=0.0, scale=1.0, size=(10, 2))
+        self.obstacle_vel = np.random.normal(loc=0.0, scale=1.0, size=(self.num_obs, 2))
         self.robot_vel = np.zeros(2)
         self.t = 0
         self.target_area = 4*self.robot_size
         return self._get_observation()
-
+    
     def _get_observation(self):
         self.target_dist = self.target_pos - self.robot_pos
         obs_pos = self.obstacle_pos - self.robot_pos
@@ -69,128 +72,173 @@ class MobileRobotEnv(gym.Env):
             return observation, self.count_in_area
 
     def step(self, action):
+        self.t += 1
         self.robot_vel = np.clip(action, -self.max_speed, self.max_speed)
 
-        self.obstacle_vel = 2*np.random.uniform(low=-2, high=2, size=(self.num_obs, 2))
-        self.target_vel = 2*np.random.uniform(low=-2, high=2, size=(2))
+        self.obstacle_vel = self._get_obstacle_vel()
+        self.robot_vel = self._get_robot_vel()
 
+
+        # robot position update with velocity, cannot go outside the wall
         self.robot_pos += self.robot_vel * self.time_step
-        self.robot_pos = np.clip(self.robot_pos, 0, self.max_distance - self.robot_size)
+        self.robot_pos = np.clip(self.robot_pos, 0, self.max_distance)
 
+        # obstacle position update with velocity,cannot go outside the wall
         self.obstacle_pos += self.obstacle_vel * self.time_step
-        self.obstacle_pos = np.clip(self.obstacle_pos, 0, self.max_distance - self.robot_size)
+        self.obstacle_pos = np.clip(self.obstacle_pos, 0, self.max_distance)
 
-        self.target_pos = np.float32([10 + 7*np.cos((2*np.pi*self.t/300 + self.rot_seed)), 10 + 7*np.sin((2*np.pi*self.t/300 + self.rot_seed))])
+        
+        # target position is moving in a circle with radius 7 centered at (10,10)
+        self.target_pos = np.float32([10 + 7*np.cos(self.rot_seed + self.t/50), 10 + 7*np.sin(self.rot_seed + self.t/50)])
 
-        done = False
+
+
+        observation, count_in_area = self._get_observation()
+        reward = self._get_reward(count_in_area)
+        done = self._get_done(reward)
+        info = {}
+        return observation, reward, done, info
+
+
+
+
+    def _get_reward(self, count_in_area):
         reward = 0
-        success=False
+        # if robot is far from the target, it gets negative reward depending on the distance
+        reward -= np.linalg.norm(self.target_dist) / 10
 
-        if np.linalg.norm(self.target_pos - self.robot_pos) < self.target_area:
-            success=True
-            if np.linalg.norm(self.target_pos - self.robot_pos) < self.robot_size:
+        # if robot position is in target area it gets positive reward
+        # reward get bigger as the robot gets closer to the target position
+        if np.linalg.norm(self.target_dist) < self.target_area:
+            reward += 10 - np.linalg.norm(self.target_dist)
+            
+
+        # if robot coliide to obstacle, it get big negative reward
+        for i in range(self.num_obs):
+            if np.linalg.norm(self.robot_pos - self.obstacle_pos[i]) < self.robot_size:
+                reward -= 100
+        # if robot collide to wall, it gets negative reward
+        if np.linalg.norm(self.robot_pos) > self.max_distance - self.robot_size:
+            reward -= 100
+    
+        return reward
+    
+    def _get_done(self, reward):
+        done = False
+
+
+        # if time is over
+        if self.t > self.maxtime:
+            done = True
+
+        # # if robot position is coinside with target position
+        # if np.linalg.norm(self.target_dist) < self.target_area:
+        #     done = True
+
+
+        # if robot collide to obstacle
+        for i in range(self.num_obs):
+            if np.linalg.norm(self.robot_pos - self.obstacle_pos[i]) < self.robot_size:
                 done = True
-            reward = 40
-        
-        elif np.linalg.norm(self.target_pos - self.robot_pos) < self.detection_range:
-            reward = 10-np.linalg.norm(self.target_pos - self.robot_pos)
-        
-        elif any(np.linalg.norm(self.robot_pos - pos) < self.robot_size for pos in self.obstacle_pos):
+        # if robot collide to wall
+        if np.linalg.norm(self.robot_pos) > self.max_distance -0.5:
             done = True
-            reward = -10000
-            success=False
-        
-        elif self.t > self.maxtime:
+        elif np.linalg.norm(self.robot_pos) < 0.5:
             done = True
-            reward = 10
-            success=False
+
+        return done
+    
+    def _get_robot_vel(self):
+        robot_vel = self.robot_vel
+        if np.linalg.norm(self.target_dist) < self.target_area:
+            return np.zeros(2)
+        robot_vel += self._get_target_force() / self.robot_mass * self.time_step
+        robot_vel = np.clip(robot_vel, -self.max_speed, self.max_speed)
+        return robot_vel
+    
+    def _get_obstacle_vel(self):
+        # obstacle's velocity is updated with sometimes random noise, sometimes circle motion (radius is 1)
+        obstacle_vel = self.obstacle_vel
+        for i in range(self.num_obs):
+            if np.random.uniform() < self.noise_ratio:
+                obstacle_vel[i] = np.random.normal(loc=0.0, scale=1.0, size=2)
+            else:
+                obstacle_vel[i] = self._get_circle_motion(i)
+        return obstacle_vel
+    
+    def _get_circle_motion(self, i):
+        # obstacle's velocity is updated with circle motion
+        # circle center is the target position raduis is random
+        circle_center = self.target_pos
+        radius = np.random.uniform(0, 4)
+        circle_motion = self.obstacle_pos[i] - circle_center
+        circle_motion = np.array([-circle_motion[1], circle_motion[0]])
+        circle_motion = circle_motion / np.linalg.norm(circle_motion)
+        circle_motion *= radius
+        return circle_motion
+    
+
+    def _get_target_force(self):
+        # target force is calculated with target distance
+        target_force = self.target_dist
+        target_force = target_force / np.linalg.norm(target_force)
+        target_force *= self.max_speed
+        return target_force
+
+    
+    
+    def render(self, mode='human'):
+        plt.clf()
+        ax = plt.gca()
+        ax.set_xlim(-3, self.max_distance+3)
+        ax.set_ylim(-3, self.max_distance+3)
+        ax.set_aspect('equal')
+        ax.add_patch(Circle(self.robot_pos, self.robot_size, color='b',label='robot'))
+        ax.scatter(self.target_pos[0], self.target_pos[1], c='#8c564b', marker='x', s=200, label='Target')
         
-        else:
-            reward = -np.linalg.norm(self.target_pos - self.robot_pos)
+        # draw obstacles
+        for i in range(self.num_obs):
+            ax.add_patch(Circle(self.obstacle_pos[i], self.robot_size, color='g',label='obstacle'))
 
-        self.t += 1
-        return self._get_observation(), reward, done, {}, self.count_in_area , success
-
-
-    def render(self):
-        if not hasattr(self, 'fig') or self.fig.canvas.manager.window is None:
-            self.fig, self.ax = plt.subplots(figsize=(15, 15))
-            plt.ion()
-        self.ax.clear()
-        self.ax.set_xlim(0-3, self.max_distance+3)
-        self.ax.set_ylim(0-3, self.max_distance+3)
-        self.ax.set_aspect('equal')
-
-        # Draw the robot
-        robot = Circle(self.robot_pos, self.robot_size, color='b', label="Robot")
-        self.ax.add_patch(robot)
-
-        # Draw the target
-        self.ax.scatter(self.target_pos[0], self.target_pos[1], c='red', marker='x', s=100, label='Target')
+        # draw a wall of dotted lines
+        ax.plot([0, 0], [self.max_distance, 0], 'k--')
+        ax.plot([0, self.max_distance], [self.max_distance, self.max_distance], 'k--')
+        ax.plot([self.max_distance, self.max_distance], [self.max_distance, 0], 'k--')
+        ax.plot([self.max_distance, 0], [0, 0], 'k--')
 
 
-        # Draw the obstacles
-        for pos, vel, desired_pos in zip(self.obstacle_pos, self.obstacle_vel, self.desired_positions):
-            self.ax.scatter(pos[0], pos[1], c='black', marker='s', s=100, label='Obstacle')
 
-        # # Draw the fixed, large rectangular obstacle
-        # rect_obstacle = Rectangle((5, 5), 2, 5, color='m', label="Fixed Obstacle")
-        # self.ax.add_patch(rect_obstacle)
+
+        # draw target area
+        ax.add_patch(Circle(self.target_pos, self.target_area,fill=True, linestyle='dashed', facecolor=(0.2, 0.1, 0.1, 0.05), zorder=-1))
+
+        # draw detection range
+        ax.add_patch(Circle(self.robot_pos, self.detection_range, fill=True, linestyle='dashed', facecolor=(0.1, 0.2, 0.1, 0.1), zorder=-1))
+
+        # draw robot velocity
+        ax.quiver(self.robot_pos[0], self.robot_pos[1], self.robot_vel[0], self.robot_vel[1], color='b', scale=10)
+
+        # draw timestep
+        ax.text(-self.max_distance, self.max_distance, 'timestep: {}'.format(self.t), fontsize=10)
 
         # Draw the legend
-        handles, labels = self.ax.get_legend_handles_labels()
+        handles, labels = ax.get_legend_handles_labels()
         by_label = dict(zip(labels, handles))
-        self.ax.legend(by_label.values(), by_label.keys(), loc='upper right')
+        ax.legend(by_label.values(), by_label.keys(), loc='upper right')
 
-        # Draw detection range circle
-        detection_circle = Circle(self.robot_pos, self.detection_range, fill=False, linestyle='dashed', color='gray')
-        target_area_circle = Circle(self.target_pos, self.target_area, fill=False, linestyle='dashed', color='gray')
-
-        self.ax.add_patch(detection_circle)
-        self.ax.add_patch(target_area_circle)
-        self.ax.quiver(
-                        self.robot_pos[0],
-                        self.robot_pos[1],
-                        self.robot_vel[0],
-                        self.robot_vel[1],
-                        angles="xy",
-                        scale_units="xy",
-                        scale=1,
-                        color="blue",
-                        )
-
-        # Draw lines between robot, obstacles, and target with colors representing force strength
-        lines = []
-        colors = []
-        for idx, (pos, vel) in enumerate(zip(self.obstacle_pos, self.obstacle_vel)):
-            obs_dist = pos - self.robot_pos
-            if np.linalg.norm(obs_dist) < self.detection_range:
-                # Get the order of the current obstacle in closest_indices
-                if idx in self.closest_indices:
-                    obstacle_order = np.where(self.closest_indices == idx)[0][0] + 1
-
-                self.ax.text(pos[0] + 0.5, pos[1], f"{obstacle_order}\nS: {self.obstacle_spring_coef[idx]:.2f}\nD: {self.obstacle_damping_coef[idx]:.2f}", fontsize=12, color='black')
-                            
-                lines.append([self.robot_pos, pos])
-                colors.append(self.obs_force)
-            else:
-                self.ax.text(pos[0] + 0.5, pos[1], f"Out", fontsize=12, color='black')
+        # show the order of obstacles
+        for i in range(self.count_in_area):
+            ax.text(self.obstacle_pos[self.closest_indices[i]][0], self.obstacle_pos[self.closest_indices[i]][1], str(i), fontsize=10)
 
 
-        lines.append([self.robot_pos, self.target_pos])
-        
-        line_collection = LineCollection(lines, cmap='twilight_shifted_r', linewidths=1)
-        self.ax.add_collection(line_collection)
-        self.ax.text(self.target_pos[0] + 0.5, self.target_pos[1], f"D: {self.target_damping_coef:.2f}\nS: {self.target_spring_coef:.2f}", fontsize=12, color='red')
+        plt.pause(0.01)
 
+    def _get_target_force(self):
+        target_dist = self.target_dist
+        target_force = -self.target_spring_coef * target_dist - self.target_damping_coef * self.robot_vel
+        return target_force
+    
 
-
-
-        self.fig.canvas.draw()
-        self.fig.canvas.flush_events()
-
+    
     def close(self):
-        if hasattr(self, 'fig'):
-            plt.close(self.fig)
-
-
+        pass

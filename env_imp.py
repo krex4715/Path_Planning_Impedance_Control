@@ -17,7 +17,7 @@ class MobileRobotEnv(gym.Env):
         self.target_pos = np.float32([10 + 7*np.cos(self.rot_seed), 10 + 7*np.sin(self.rot_seed)])
         self.max_distance = 20
         self.num_obs = num_obs
-        self.detection_range = 3
+        self.detection_range = 5
         self.maxtime=maxtime
         self.graphics = graphics
 
@@ -165,7 +165,7 @@ class MobileRobotEnv(gym.Env):
             reward = -10-np.linalg.norm(self.target_pos - self.robot_pos)
 
         self.t += 1
-        return self._get_observation(), reward, done, {}, self.count_in_area , success
+        return self._get_observation()[0], reward, done, {}
 
 
     def render(self):
